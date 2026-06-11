@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ระบบแมทช์รึป่าว — DMSx vs SAP (PDF Supported)</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-purple: #4c1d95; 
+            --bg: #f1f5f9;
+            --card-bg: #ffffff;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --border: #e2e8f0;
+        }
+
+        body { font-family: 'Sarabun', sans-serif; background-color: var(--bg); margin: 0; }
+        .hero-header { background: var(--primary-purple); color: white; padding: 2.5rem 1rem; text-align: center; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .container { max-width: 1100px; margin: 0 auto; padding: 2rem 1rem; }
+        
+        .grid-upload { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+        .card-upload { background: var(--card-bg); padding: 1.5rem; border-radius: 12px; border: 2px dashed var(--border); text-align: center; }
+        .card-upload:hover { border-color: var(--primary-purple); }
+        .card-upload h3 { margin-bottom: 0.5rem; color: var(--primary-purple); margin-top: 0; }
+        .card-upload p { font-size: 0.85rem; color: #64748b; margin-bottom: 1rem; }
+
+        .btn-main { width: 100%; background: var(--primary-purple); color: white; border: none; padding: 1rem; border-radius: 8px; font-size: 1.2rem; font-weight: 700; cursor: pointer; transition: 0.2s; }
+        .btn-main:hover { background: #5b21b6; transform: translateY(-2px); }
+        .btn-main:disabled { background: #cbd5e1; cursor: not-allowed; transform: none; }
+
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin: 2rem 0; }
+        .stat-card { background: white; padding: 1.2rem; border-radius: 12px; text-align: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .stat-value { font-size: 1.8rem; font-weight: 700; display: block; }
+        
+        .table-container { background: white; border-radius: 12px; overflow-x: auto; box-shadow: 0 4px 6px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; min-width: 700px; }
+        th { background: #f8fafc; padding: 1rem; text-align: left; color: #64748b; font-size: 0.9rem; }
+        td { padding: 1rem; border-bottom: 1px solid #f1f5f9; font-size: 0.95rem; }
+        .badge { padding: 0.3rem 0.7rem; border-radius: 20px; font-size: 0.8rem; font-weight: 600; display: inline-block; }
+        .badge-success { background: #dcfce7; color: #166534; }
+        .badge-error { background: #fee2e2; color: #991b1b; }
+        .badge-warn { background: #fef9c3; color: #854d0e; }
+        
+        .loading-text { color: #64748b; font-style: italic; margin-top: 0.5rem; display: none; }
+    </style>
+</head>
+<body>
+
+<div class="hero-header">
+    <h1>ระบบ "แมทช์รึป่าว" (DMSx vs SAP)</h1>
+    <p>ตรวจสอบความถูกต้องของสถานะมิเตอร์ระหว่างตารางใน PDF และตารางใน Excel</p>
+</div>
+
+<div class="container">
+    <div class="grid-upload">
+        <div class="card-upload">
+            <h3>📁 ไฟล์ระบบ SAP (.xlsx, .csv)</h3>
+            <p>ตัวอย่าง: EXPORT SAP 11062569 (สแกนคอลัมน์ D และ E)</p>
+            <input type="file" id="fileSap" accept=".csv, .xls, .xlsx">
+        </div>
+        <div class="card-upload">
+            <h3>📄 ไฟล์ระบบ DMSx (.pdf)</h3>
+            <p>ตัวอย่าง: DNKL_DMSX_AGENT_REP02 (สแกนตารางข้อความใน PDF)</p>
+            <input type="file" id="fileDmsx" accept=".pdf">
+        </div>
+    </div>
+
+    <button id="btnProcess" class="btn-main" onclick="processData()">🚀 ตรวจสอบและเปรียบเทียบข้อมูล</button>
+    <div id="loadingStatus" class="loading-text" style="text-align: center;">กำลังเปิดอ่านและดึงข้อมูลจากไฟล์ PDF กรุณารอสักครู่...</div>
+
+    <div id="resultView" style="display: none;">
+        <div class="summary-grid">
+            <div class="stat-card">
+                <span class="stat-value" id="countDmsx">0</span>
+                <small>พบข้อมูลในตาราง DMSx (PDF)</small>
+            </div>
+            <div class="stat-card">
+                <span class="stat-value" id="countSap">0</span>
+                <small>พบข้อมูลในระบบ SAP (Excel)</small>
+            </div>
+            <div class="stat-card" style="color: var(--success)">
+                <span class="stat-value" id="countMatch">0</span>
+                <small>ข้อมูลตรงกัน ✓</small>
+            </div>
+            <div class="stat-card" style="color: var(--danger)">
+                <span class="stat-value" id="countMismatch">0</span>
+                <small>ไม่ตรงกัน (Human Error) ✗</small>
+            </div>
+        </div>
+
+        <div class="table-container">
+            <table id="resultTable">
+                <thead>
+                    <tr>
+                        <th>หมายเลขผู้ใช้ไฟ (CA)</th>
+                        <th>ข้อมูลต้นฉบับจาก PDF</th>
+                        <th>สถานะล่าสุด (DMSx)</th>
+                        <th>การดำเนินการ (SAP)</th>
+                        <th>ผลลัพธ์การจับคู่</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // ตั้งค่า Worker สำหรับไลบรารี PDF.js
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.4.120/pdf.worker.min.js';
+
+    // ฟังก์ชันทำความสะอาดข้อความทั่วไป
+    function cleanText(val) {
+        return String(val ?? "").replace(/\s+/g, " ").trim();
+    }
+
+    // ฟังก์ชันดึงเฉพาะตัวเลขผู้ใช้ไฟ 12 หลักหลักออกมาจากสตริงซับซ้อน
+    function extractCustomerNo(text) {
+        const cleanStr = cleanText(text);
+        // ค้นหาตัวเลขติดกันความยาว 9-12 หลัก (เพราะบางที่อาจพิมพ์ขึ้นต้นด้วย 0200...)
+        const match = cleanStr.match(/\b(02\d{10}|\d{12})\b/);
+        if (match) return match[1];
+        
+        // กรณีไม่มีกรอบรหัสสมบูรณ์ ลองหาตัวเลขกลุ่มแรกยาวเกิน 8 หลักขึ้นไป
+        const fallbackMatch = cleanStr.match(/\d{9,12}/);
+        return fallbackMatch ? fallbackMatch[0] : null;
+    }
+
+    // แปลงคำศัพท์ให้อยู่ในสถานะมาตรฐานเพื่อเปรียบเทียบข้ามระบบ
+    function standardizeStatus(statusText) {
+        const txt = cleanText(statusText).toLowerCase();
+        if (!txt) return "ไม่ระบุ";
+        if (txt.includes("ปลดสาย")) return "ปลดสาย";
+        if (txt.includes("ต่อสาย") || txt.includes("ค่อสาย")) return "ต่อสาย";
+        if (txt.includes("ผ่อน")) return "ผ่อนผัน";
+        if (txt.includes("ระงับ")) return "ระงับ";
+        return txt; // ส่งค่าเดิมออกไปหากไม่เข้าเงื่อนไขหลัก
+    }
+
+    // 1. ฟังก์ชันอ่านไฟล์ Excel/CSV ของฝั่ง SAP
+    function readSapExcel(file) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array' });
+                    const firstSheet = workbook.Sheets[workbook.SheetNames[0]];
+                    const jsonRows = XLSX.utils.sheet_to_json(firstSheet, { header: 1 });
+                    
+                    let sapMap = new Map();
+                    if(jsonRows.length === 0) { resolve(sapMap); return; }
+
+                    // ค้นหาตำแหน่ง Header เพื่อป้องกันปัญหาสลับคอลัมน์
+                    const firstRow = jsonRows[0].map(h => cleanText(h));
+                    let colActionIndex = firstRow.findIndex(h => h.includes("การดำเนินการ") || h.includes("การดําเนินการ"));
+                    let colCaIndex = firstRow.findIndex(h => h.includes("บัญชีแสดงสัญญา"));
+
+                    // หากหาจากหัวข้อไม่เจอ ให้ยึด Default Column D (Index 3) และ Column E (Index 4) ตามเงื่อนไขโจทย์
+                    if (colActionIndex === -1) colActionIndex = 3;
+                    if (colCaIndex === -1) colCaIndex = 4;
+
+                    // สแกนเก็บข้อมูลลง Map โดยใช้ Account No เป็นคีย์
+                    for (let i = 1; i < jsonRows.length; i++) {
+                        const row = jsonRows[i];
+                        if (!row || row.length === 0) continue;
+                        
+                        const rawCa = cleanText(row[colCaIndex]);
+                        const rawAction = cleanText(row[colActionIndex]);
+                        
+                        if (rawCa) {
+                            sapMap.set(rawCa, {
+                                rawAction: rawAction,
+                                stdAction: standardizeStatus(rawAction)
+                            });
+                        }
+                    }
+                    resolve(sapMap);
+                } catch (err) {
+                    reject(err);
+                }
+            };
+            reader.onerror = err => reject(err);
+            reader.readAsArrayBuffer(file);
+        });
+    }
+
+    // 2. ฟังก์ชันดึง Text ทั้งหมดจาก PDF แยกตามโครงสร้าง เพื่อนำมาสกัดเป็นตารางของ DMSx
+    async function readDmsxPdf(file) {
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+        let dmsxRecords = [];
+
+        // วนลูปอ่านข้อมูลทุกหน้าใน PDF
+        for (let i = 1; i <= pdf.numPages; i++) {
+            const page = await pdf.getPage(i);
+            const textContent = await page.getTextContent();
+            
+            // นำชิ้นส่วนคำมารวมกันและจัดกลุ่มตามตำแหน่งพิกัด Y (บรรทัดเดียวกัน)
+            let textItems = textContent.items.map(item => ({
+                text: item.str,
+                y: Math.round(item.transform[5]), // พิกัดแนวตั้ง
+                x: Math.round(item.transform[4])  // พิกัดแนวนอน
+            }));
+
+            // จัดเรียงชิ้นส่วนจากบนลงล่าง และจากซ้ายไปขวา
+            textItems.sort((a, b) => b.y - a.y || a.x - b.x);
+
+            // รวมข้อความให้ออกมาเป็นบรรทัดตามหน้าเอกสารจริง
+            let lines = [];
+            let currentY = -1;
+            let currentLine = [];
+
+            textItems.forEach(item => {
+                if (currentY === -1 || Math.abs(item.y - currentY) < 6) {
+                    currentLine.push(item.text);
+                    if (currentY === -1) currentY = item.y;
+                } else {
+                    lines.push(currentLine.join(" "));
+                    currentLine = [item.text];
+                    currentY = item.y;
+                }
+            });
+            if (currentLine.length > 0) lines.push(currentLine.join(" "));
+
+            // ทำการวิเคราะห์บรรทัดข้อมูลเพื่อดึงรหัสผู้ใช้ไฟและสถานะออกมา
+            let lastFoundCa = null;
+            let lastFoundRawText = "";
+
+            for (let j = 0; j < lines.length; j++) {
+                const line = lines[j];
+                
+                // ตรวจหาหมายเลขผู้ใช้ไฟ (เช่น 020015726173) ในบรรทัดนั้น ๆ
+                const caCandidate = extractCustomerNo(line);
+                if (caCandidate) {
+                    lastFoundCa = caCandidate;
+                    lastFoundRawText = line;
+                }
+
+                // หากเจอรหัสผู้ใช้ไฟก่อนหน้า และบรรทัดปัจจุบันหรือบรรทัดถัดไปมีคำบอกสถานะการทำงาน
+                if (lastFoundCa) {
+                    const hasStatus = line.includes("ปลดสาย") || 
+                                      line.includes("ต่อสาย") || 
+                                      line.includes("ค่อสาย") || 
+                                      line.includes("ผ่อนผัน") ||
+                                      line.includes("ให้ต่อสาย");
+                                      
+                    if (hasStatus) {
+                        // ป้องกันการบันทึกรหัสซ้ำซ้อนในหน้าเดียวกัน
+                        const isExist = dmsxRecords.some(r => r.ca === lastFoundCa);
+                        if (!isExist) {
+                            dmsxRecords.push({
+                                ca: lastFoundCa,
+                                rawText: lastFoundRawText,
+                                rawStatus: line,
+                                stdStatus: standardizeStatus(line)
+                            });
+                        }
+                        lastFoundCa = null; // Reset หลังจากบันทึกรายการสำเร็จ
+                    }
+                }
+            }
+        }
+        return dmsxRecords;
+    }
+
+    // ฟังก์ชันหลักทำงานเมื่อกดปุ่มตรวจสอบข้อมูล
+    async function processData() {
+        const fileSap = document.getElementById('fileSap').files[0];
+        const fileDmsx = document.getElementById('fileDmsx').files[0];
+
+        if (!fileSap || !fileDmsx) {
+            alert("กรุณาเลือกไฟล์คู่เปรียบเทียบให้ครบถ้วนก่อนตรวจสอบ (ต้องมีทั้งไฟล์ SAP และไฟล์ DMSx PDF)");
+            return;
+        }
+
+        // เปิด UI Loading และบล็อกปุ่มชั่วคราว
+        document.getElementById('btnProcess').disabled = true;
+        document.getElementById('loadingStatus').style.display = 'block';
+        document.getElementById('resultView').style.display = 'none';
+
+        try {
+            // ดึงข้อมูลพร้อมกันจากทั้งสองไฟล์
+            const sapMap = await readSapExcel(fileSap);
+            const dmsxList = await readDmsxPdf(fileDmsx);
+
+            let matchCount = 0;
+            let mismatchCount = 0;
+            const tbody = document.querySelector("#resultTable tbody");
+            tbody.innerHTML = "";
+
+            // ตรวจสอบจับคู่โดยอ้างอิงรายชื่อจากตารางไฟล์ PDF (DMSx) เป็นหลัก
+            dmsxList.forEach(dmsxItem => {
+                const sapItem = sapMap.get(dmsxItem.ca);
+                let rowHtml = "";
+                
+                if (sapItem) {
+                    // ตรวจความตรงกันของสถานะมาตรฐานที่ถูกคัดกรองแล้ว
+                    const isMatch = (dmsxItem.stdStatus === sapItem.stdAction);
+                    if (isMatch) matchCount++; else mismatchCount++;
+
+                    rowHtml = `
+                        <tr>
+                            <td><b>${dmsxItem.ca}</b></td>
+                            <td style="font-size:0.8rem; color:#64748b;">${dmsxItem.rawText}</td>
+                            <td><span class="badge badge-warn">${dmsxItem.stdStatus}</span> <small style="color:#94a3b8">(${cleanText(dmsxItem.rawStatus).substring(0,20)}...)</small></td>
+                            <td><span class="badge badge-warn">${sapItem.stdAction}</span> <small style="color:#94a3b8">(${sapItem.rawAction})</small></td>
+                            <td>
+                                <span class="badge ${isMatch ? 'badge-success' : 'badge-error'}">
+                                    ${isMatch ? '✓ ตรงกัน' : '✗ ไม่ตรงกัน (Human Error)'}
+                                </span>
+                            </td>
+                        </tr>
+                    `;
+                } else {
+                    // กรณีพบในตาราง PDF แต่ไม่พบข้อมูลเลขที่สัญญานี้ในคอลัมน์ E ของ Excel SAP
+                    mismatchCount++;
+                    rowHtml = `
+                        <tr>
+                            <td><b>${dmsxItem.ca}</b></td>
+                            <td style="font-size:0.8rem; color:#64748b;">${dmsxItem.rawText}</td>
+                            <td><span class="badge badge-warn">${dmsxItem.stdStatus}</span></td>
+                            <td style="color:#ef4444; font-style:italic;">ไม่พบเลขบัญชีนี้ในไฟล์ SAP</td>
+                            <td><span class="badge badge-error">✗ ไม่พบข้อมูลคู่แมทช์</span></td>
+                        </tr>
+                    `;
+                }
+                tbody.insertAdjacentHTML('beforeend', rowHtml);
+            });
+
+            // อัปเดตข้อมูลจำนวนสถิติบนหน้าเว็บแสดงผล
+            document.getElementById('countDmsx').innerText = dmsxList.length;
+            document.getElementById('countSap').innerText = sapMap.size;
+            document.getElementById('countMatch').innerText = matchCount;
+            document.getElementById('countMismatch').innerText = mismatchCount;
+
+            // แสดงหน้าตารางสรุปผล
+            document.getElementById('resultView').style.display = 'block';
+
+        } catch (error) {
+            console.error(error);
+            alert("เกิดข้อผิดพลาดระหว่างประมวลผลไฟล์: " + error.message);
+        } finally {
+            // ปิด UI Loading
+            document.getElementById('btnProcess').disabled = false;
+            document.getElementById('loadingStatus').style.display = 'none';
+        }
+    }
+</script>
+
+</body>
+</html>
